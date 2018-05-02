@@ -657,6 +657,7 @@ skip:
 	if (vioif_alloc_mems(sc) < 0)
 		goto err;
 
+	printf("\nTTRT dev name = %s\n\n", device_xname(self));
 	strlcpy(ifp->if_xname, device_xname(self), IFNAMSIZ);
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
@@ -731,6 +732,13 @@ vioif_init(struct ifnet *ifp)
 	sc->sc_stopping = false;
 
 	vioif_populate_rx_mbufs(sc);
+
+	{
+		int r;
+		r =  vioif_set_promisc(sc, true);
+		printf("TTRT Setting promisc mode ret=%d\n", r);
+		// is overriden later :/
+	}
 
 	vioif_updown(sc, true);
 	ifp->if_flags |= IFF_RUNNING;
@@ -1268,7 +1276,12 @@ vioif_set_promisc(struct vioif_softc *sc, bool onoff)
 {
 	int r;
 
-	r = vioif_ctrl_rx(sc, VIRTIO_NET_CTRL_RX_PROMISC, onoff);
+	int f1, f2;
+	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
+	f1 = ifp->if_flags | IFF_PROMISC;
+	r = vioif_ctrl_rx(sc, VIRTIO_NET_CTRL_RX_PROMISC, true);
+	f2 = ifp->if_flags | IFF_PROMISC;
+	printf("TTRT vioif_ctrl_rx PROMISC=true (onoff=%d), ret=%d, f1=0x%04x f2=0x%04x\n", onoff, r, f1, f2);
 
 	return r;
 }
