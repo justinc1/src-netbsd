@@ -535,6 +535,110 @@ altq_etherclassify(struct ifaltq *ifq, struct mbuf *m)
 }
 #endif /* ALTQ */
 
+
+/*--------------------------------------------------------------*/
+//#include <stdio.h>
+//#include <string.h>
+//#include <ctype.h>
+#define fprintf(ff, ...) printf(__VA_ARGS__)
+/*
+Implement "hexdump -C" utility.
+*/
+
+void hexdump(void* ptr, size_t size, size_t addr0);
+
+#define OUTF stdout
+
+void hexdump(void* ptr, size_t size, size_t addr0) {
+  int ii, jj;
+  bool first_repeat=false;
+
+  size_t sz2;
+  unsigned char tmp[16+2]="", curline[16+2], prevline[16+2]="empty";
+
+  for (jj=0; jj<(size+15)/16; jj++) {
+    sz2 = 16;
+    if ((jj+1)*16 > size) {
+      sz2 = size - jj*16;
+    }
+    memcpy(tmp, ((char*)ptr) + jj*16, sz2);
+    memcpy(curline, ((char*)ptr) + jj*16, sz2);
+    tmp[sz2]='\0';
+    curline[sz2]='\0';
+
+    if (memcmp(prevline, curline, sz2) == 0) {
+      if (sz2 != 16) {
+        fprintf(OUTF, "%08zu\n", addr0 + jj*16);
+        first_repeat = false;
+      }
+      else {
+        if (first_repeat) {
+          fprintf(OUTF, "*\n");
+          first_repeat = false;
+        }
+      }
+      continue;
+    }
+    else {
+      first_repeat = true;      
+    }
+
+    fprintf(OUTF, "%08zu  ", addr0 + jj*16);
+    for(ii=0; ii<8 && ii<sz2; ii++) {
+      fprintf(OUTF, " %02x", tmp[ii]);
+    }
+    fprintf(OUTF, " ");
+    for(ii=8; ii<16 && ii<sz2; ii++) {
+      fprintf(OUTF, " %02x", tmp[ii]);
+    }
+    for(ii=sz2; ii<16; ii++) {
+      fprintf(OUTF, "   ");
+    }
+    for(ii=0; ii<sz2; ii++) {
+      if(tmp[ii] == ' ' ||
+        isalnum(tmp[ii]) || 
+        isgraph(tmp[ii])    )
+        continue;
+      tmp[ii] = '.';
+    }
+    fprintf(OUTF, "  |%s|\n", tmp);
+
+    memcpy(prevline, curline, sz2);
+  }
+  fprintf(OUTF, "%08zu\n", addr0 + size);
+}
+/*--------------------------------------------------------------*/
+/*------------------------------------------------------*/
+/* WARNING: This code assumes that it is running on a little endian machine (x86) */
+static inline uint16_t
+local_htons(uint16_t v)
+{
+  return (((v & 0xFF) << 8) | ((v & 0xFF00) >> 8));
+}
+
+static inline uint16_t
+local_ntohs(uint16_t v)
+{
+  return (local_htons(v));
+}
+
+static inline uint32_t
+local_htonl(uint32_t v)
+{
+  return (((uint32_t)local_htons(v & 0xFFFF)) << 16) | ((uint32_t)local_htons(v >> 16));
+}
+
+static inline uint32_t
+local_ntohl(uint32_t v)
+{
+  return local_htonl(v);
+}
+
+#define printk printf
+#include "/home/justin_cinkelj/devel/oor/mirage-tcpip/src/tcpip_checksum/vfw_code.c"
+/*------------------------------------------------------*/
+
+
 /*
  * Process a received Ethernet packet;
  * the packet is in the mbuf chain m with
@@ -589,6 +693,28 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 		m_freem(m);
 		return;
 	}
+
+#if 1
+	{
+	int vfw_len;
+
+	/*printf("eth_in: %p m=%p m->m_pkthdr.len=%d m->m_hdr.mh_data=%p m->m_hdr.mh_len=%d\n",
+		eh, m, (int)m->m_pkthdr.len, m->m_hdr.mh_data, m->m_hdr.mh_len); // ehlen==14, to je samo ethernet headr del
+	printf("ETH-IN: len=%d\n", m->m_pkthdr.len);
+	hexdump(m->m_hdr.mh_data, m->m_pkthdr.len, 0);
+	*/
+	vfw_len = vfw_process((ethernet_frame*)m->m_hdr.mh_data, m->m_pkthdr.len);
+	if (vfw_len) {
+		//printf("ETH-OUT: len=%d\n", vfw_len);
+		//hexdump(m->m_hdr.mh_data, m->m_pkthdr.len, 0);
+		ifq_enqueue(ifp, m);
+	}
+	else {
+		//printf("ETH-DROP: len=%d\n", m->m_pkthdr.len);
+	}
+	return;
+	}
+#endif
 
 	if (ETHER_IS_MULTICAST(eh->ether_dhost)) {
 		/*
